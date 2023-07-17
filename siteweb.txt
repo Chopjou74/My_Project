@@ -1,0 +1,175 @@
+
+Le déploiement d’un Serveur Web- LAMP sécurisé(Certificat-SSL) en haute disponibilité avec HAproxy et keepalived sur LINUX  
+
+Introduction
+
+L'objectif de ce rapport est de présenter le déploiement d'une application LAMP. LAMP est un acronyme pour Linux, Apache, MySQL, PHP. C'est une pile logicielle comprenant le système d'exploitation Linux, un serveur HTTP, un système de gestion de bases de données et un langage de programmation interprété, qui permet de mettre en place un serveur web. J’ai mise en œuvre HAProxy, Keepalived et MySQL Réplication pour assurer la redondance des serveurs et la répartition de charge et aussi phpMyAdmin pour la gestion des données des utilisateurs. 
+1.1	Contexte du rapport
+Ce rapport propose une solution complète qui combine différentes technologies et techniques pour assurer la disponibilité continue de l'application web et la protection des données sensibles.
+3.1 Description des applications
+ 3.1.1 Type de l'application
+L'application est de type web, destinée à être utilisée par les clients via un navigateur web.
+    3.1.2 Rôles fonctionnel des applications utilisées
+Le déploiement d'une application web LAMP en haute disponibilité et sécurisée, avec HAproxy, keepalived, et MySQL Réplication sous Linux, implique plusieurs rôles fonctionnels pour chaque application :
+i.	Application web (LAMP) 
+•	Linux : le système d'exploitation
+
+•	Apache : le serveur HTTP, il permet au serveur de communiquer avec le navigateur en utilisant le protocole HTTP(S) 
+•	MySQL : il s'agit d'un serveur de bases de données. Il sert à stocker, à manipuler et à accéder à des listes de données organisées en tableaux. 
+
+•	PHP : PHP est un langage de programmation interprété qui permet de générer du contenu web dynamiquement. 
+
+ii.	HAproxy :
+•	Équilibre la charge du trafic entrant vers les serveurs disponibles.
+•	Surveille l'état des serveurs et redirige le trafic vers les serveurs en fonction de leur disponibilité.
+•	Assure la continuité du service en cas de défaillance d'un serveur en redirigeant le trafic vers les serveurs disponibles.
+
+iii.	Keepalived :
+•	Fournit un mécanisme de basculement automatique en cas de panne d'un serveur.
+•	Surveille l'état du serveur principal et bascule automatiquement vers un serveur de secours en cas de défaillance.
+•	Assure une haute disponibilité en maintenant la disponibilité d'au moins un serveur actif en permanence.
+
+iv.	MySQL Réplication :
+•	Assure la réplication des données entre les serveurs de base de données.
+
+•	Garantit la cohérence des données entre les différents serveurs.
+•	Permet la récupération rapide en cas de défaillance d'un serveur en utilisant les données répliquées.
+
+v.	Interface phpMyAdmin :
+•	Fournit une interface conviviale pour gérer et surveiller les bases de données.
+•	Permet aux administrateurs de gérer les tables, les requêtes SQL et les utilisateurs de la base de données.
+•	Facilite la gestion et la maintenance de la base de données.
+
+Ces différentes applications jouent des rôles spécifiques dans le déploiement de l'application LAMP. 
+ 
+
+Mise en pratique  
+
+Installation d’Apache sur serveur debian et mise en place d'un premier site ===== > 192.168.100.251/24
+Changer le nom de notre serveur :
+hostnamectl set-hostname web1
+On commence par mettre à jour le cache des paquets :
+apt-get update 
+Ensuite, on installe le paquet "apache2" afin d'obtenir la dernière version d'Apache
+apt-get install -y apache2
+Pour qu'Apache démarre automatiquement en même temps que Debian, saisissez la commande 
+systemctl enable apache2
+systemctl restart apache2
+Création et configuration du site web
+On commence par la suppression du site par default 
+rm /var/www/html/index.html
+a.	Création du dossier d’hébergement des pages web
+mkdir   /var/www/html/ccs 
+création d’une page d’exemple pour le site 
+nano /var/www/ccs/index.html
+
+<!DOCTYPE html>
+<html lan="fr">
+<head>
+        <meta charset="utf-8" >
+
+        <title>
+                WEB1
+         </title>
+        <link rel="stylesheet" href="ccs/style.ccs" />
+</head>
+<body>
+
+        <header>
+
+        <H1 style=color:red;background-color:pink;display:flex;width:400px;justify-content:align-items:center>
+                WEB1-CCS.LABO
+        </H1>
+
+        <p>WELCOME TO CCS.LABO WEB_SERVICES</p>
+
+         </header>
+
+        <nav>
+                <ul>
+                        <li><a href="#">Acceuil</a></li>
+                        <li><a href="#">Nouvelles</a></li>
+                        <li><a href="#">Emails</a></li>
+                        <li><a href="#">Produits</a></li>
+                        <li><a href="#">Contacts</a></li>
+                </ul>
+        </nav>
+
+        <img src="https://upload.wikimedia.org/wikipedia/commons/8/8d/Linux_Logo.jpg">
+
+         <main>
+                <h2>Nouvelles</h2>
+                <p>Contenu de la page</p>
+
+        </main>
+
+	<footer>
+                <p>Pied de la page</p>
+        </footer>
+
+         <a href="http://google.com/">
+          Google link here
+        </a>
+
+
+</body>
+</html>
+
+Redémarage du service :
+systemctl restart apache2
+**On rajout un deuxième site sur le serveur web2 de la même façon
+
+b.	Création du site1 sécurisé  
+NB : le certificat SSL à déjà été créés avec la commande : openssl req -x509 -new -nodes -out /etc/ssl/mescertifs/ccs.crt -keyout /etc/ssl/mescertifs/ccs.key
+Nano /etc/apache2/sites-available/ccs.conf 
+<VirtualHost *:80>
+        ServerName ccs.labo
+        ServerAlias www.ccs.labo
+        Redirect permanent / https://ccs.labo
+        DocumentRoot /var/www/html/ccs
+
+        <Directory /var/www/html/ccs>
+                Options FollowSymlinks
+                AllowOverride All
+        </Directory>
+        ErrorLog ${APACHE_LOG_DIR}/error.log
+        CustomLog ${APACHE_LOG_DIR} /access.log combined
+</VirtualHost>
+<VirtualHost *:443>
+        ServerName ccs.labo
+        ServerAlias www.ccs.labo
+        DocumentRoot /var/www/html/ccs
+
+        <Directory /var/www/html/ccs>
+                Options FollowSymlinks #Autorise la substitution de la configuration par des fichiers
+                AllowOverride All : #Autorise la substitution de la configuration par des fichiers
+        </Directory>
+        SSLEngine on
+        SSLCertificateFile      /etc/ssl/mescertifs/ccs.crt
+        SSLCertificateKeyFile   /etc/ssl/mescertifs/ccs.key
+</VirtualHost>
+
+****Les étapes à répéter sur le serveur web2 et adapter la configuration
+Quelques modules d'Apache qui sont indispensables à activer / Activation du sites ccs.labo.conf et redémarrage du service apache2
+a2enmod rewrite    ====> le module utilisé pour la réécriture d'URL
+a2enmod deflate    = ===> pour la gestion de la compression, notamment en gzip, pour utiliser la mise en cache des pages sur le site
+a2enmod headers   ====> afin de pouvoir agir sur les en-têtes HTTP
+a2enmod ssl            ====> pour gérer les certificats SSL et donc l'utilisation du protocole HTTPS
+a2ensite ccs.labo.conf
+
+systemctl reload/restart apache2
+Pour tester le fonctionnement du site web,  nous utiliserons un client windows, puis nous essaierons de nous connecter à https://192.168.100.251 à l’aide d’un navigateur web 
+
+
+A)	Installation de PHP 
+PHP va venir se greffer sur notre serveur Apache, comme une extension, afin de pouvoir traiter les scripts intégrés aux pages ".php".
+apt-get install -y php
+On installe ensuite quelques paquets supplémentaires pour compléter l'installation de PHP sur le serveur. Par exemple, pour permettre les interactions entre PHP et l’instance MariaDB.
+apt-get install -y php-pdo php-mysql php-zip php-gd php-mbstring php-curl php-xml php-pear php-bcmath
+Pour vérifier quelle version de PHP vous venez d'installer. Exécute la commande suivante : 
+PHP -v
+Maintenant, pour assurer que le script PHP est bien actif, on créer un fichier "phpinfo.php" à la racine de notre site Web :
+nano /var/www/html/phpinfo.php
+<?php
+phpinfo();
+?>

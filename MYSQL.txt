@@ -1,0 +1,204 @@
+Installation et configuration de MySQL réplication sur Debian 11
+
+Avant d'installer le serveur MariaDB, exécutez la commande "apt install" ci-dessous pour installer certaines bases du package
+apt install gnupg2 apt-transport-https software-properties-common
+
+Exécutez la commande suivante pour importer la clé GPG pour le référentiel MariaDB. L'empreinte complète de la clé est "1993 69E5 404B D5FC 7D2F E43B CBCB 082A 1BB9 43DB".
+apt-key adv --recv-keys --keyserver hkp://keyserver.ubuntu.com:80 0xF1656F24C74CD1D8
+
+Exécutez la commande suivante pour ajouter le référentiel MariaDB pour le serveur Debian 11*
+Ensuite, mettez à jour et actualisez l'index des packages sur vos serveurs.
+add-apt-repository 'deb [arch=amd64,arm64,ppc64el] http://sfo1.mirrors.digitalocean.com/mariadb/repo/10.8.3/debian bullseye main'
+apt update
+
+Exécutez la commande ci-dessous pour installer mariadb
+apt install mariadb-server –y
+Le service MariaDB sera démarré et activé automatiquement. Exécutez la commande "systemctl" ci-dessous pour vérifier et vérifier le service MariaDB
+systemctl is-enabled mariadb
+systemctl status mariadb
+Suite à l'installation, on exécute le script "mariadb-secure-installation" afin de sécuriser un minimum installation de MariaDB.
+mariadb-secure-installation
+Définir un mot de passe pour le compte "root" de MariaDB, empêcher les connexions distantes sur votre instance à l'aide du compte "root", empêcher les connexions anonymes et supprimer la base de test.
+a.	Configuration du MariaDB réplication (MASTER @sur web1)
+Exécutez la commande "systemctl stop mariadb " pour arrêter le service MariaDB. Ceci est nécessaire avant de configurer le serveur MariaDB
+On modifie le fichier de configuration du serveur MariaDB "/etc/mysql/mariadb.conf.d/50-server.cnf" en utilisant la commande 
+nano /etc/mysql/mariadb.conf.d/50-server.cnf
+[mysqld]
+bind-address = 192.168.100.251
+
+server-id              = 1
+report_host         = web1
+
+log_bin                  = /var/log/mysql/mariadb-bin
+log_bin_index      = /var/log/mysql/mariadb-bin.index
+
+relay_log              = /var/log/mysql/relay-bin
+relay_log_index  = /var/log/mysql/relay-bin.index
+
+systemctl start mariadb
+ss –plnt ===> pour les ports et les service associés
+Créer un nouvel utilisateur MariaDB qui sera utilisé pour répliquer les données entre les serveurs MariaDB.
+
+mysql -u root –p
+CREATE USER 'eva'@'%' IDENTIFIED BY 'poseidon';
+GRANT REPLICATION SLAVE ON *. * TO 'eva'@'%';
+FLUSH PRIVILEGES;
+Ensuite, exécutez la requête suivante pour vérifier le journal binaire actuel et sa position exacte. Dans mon cas, le fichier journal binaire du serveur MariaDB est "mariadb-bin.000007" avec la position "2669". Ces sorties seront utilisées dans l'étape suivante pour la mise en place du serveur "Slave".
+
+
+SHOW MASTER STATUS;
++--------------------+----------+--------------+------------------+
+| File               | Position | Binlog_Do_DB | Binlog_Ignore_DB |
++--------------------+----------+--------------+------------------+
+| mariadb-bin.000019 |      344 |              |                  |
++--------------------+----------+--------------+------------------+
+1 row in set (0,000 sec)
+
+
+b.	Configuration du MariaDB réplication (Slave)
+Exécutez la commande "systemctl stop mariadb» pour arrêter le service MariaDB. Ceci est nécessaire avant de configurer le serveur MariaDB
+On modifie le fichier de configuration du serveur MariaDB "/etc/mysql/mariadb.conf.d/50-server.cnf" en utilisant la commande 
+nano /etc/mysql/mariadb.conf.d/50-server.cnf
+[mysqld]
+bind-address = 192.168.100.252
+
+server-id              = 2
+report_host            = web2
+
+log_bin                = /var/log/mysql/mariadb-bin
+log_bin_index          = /var/log/mysql/mariadb-bin.index
+
+relay_log              = /var/log/mysql/relay-bin
+relay_log_index        = /var/log/mysql/relay-bin.index
+
+
+systemctl start mariadb
+ss –plnt ===> pour les ports et les service associés
+Créer un nouvel utilisateur MariaDB qui sera utilisé pour répliquer les données entre les serveurs MariaDB.
+mysql -u root –p
+CREATE USER 'rex'@'%' IDENTIFIED BY 'poseidon';
+GRANT REPLICATION SLAVE ON *. * TO 'rex'@'%';
+FLUSH PRIVILEGES;
+Arrêter l'esclave. Ensuite, ajoutez des informations détaillées sur le serveur MariaDB "master".  Ici, le serveur MariaDB "master" utilise le nom d'hôte "web1", l'utilisateur et le mot de passe pour la réplication des données est "rex", et enfin le fichier binlog est "mariadb-bin.000007" avec la position "2669".
+STOP SLAVE;
+CHANGE MASTER TO MASTER_HOST='web1', MASTER_USER='rex', MASTER_PASSWORD='poseidon', MASTER_LOG_FILE='mariadb-bin.000007', MASTER_LOG_POS=2669;
+
+START SLAVE;
+SHOW SLAVE STATUS\G
+MariaDB [(none)]> SHOW SLAVE STATUS\G;
+*************************** 1. row ***************************
+                Slave_IO_State: Waiting for master to send event
+                   Master_Host: web1
+                   Master_User: rex
+                   Master_Port: 3306
+                 Connect_Retry: 60
+               Master_Log_File: mariadb-bin.000019
+           Read_Master_Log_Pos: 344
+                Relay_Log_File: relay-bin.000056
+                 Relay_Log_Pos: 645
+         Relay_Master_Log_File: mariadb-bin.000019
+              Slave_IO_Running: Yes
+             Slave_SQL_Running: Yes
+               Replicate_Do_DB:
+           Replicate_Ignore_DB:
+            Replicate_Do_Table:
+        Replicate_Ignore_Table:
+       Replicate_Wild_Do_Table:
+   Replicate_Wild_Ignore_Table:
+                    Last_Errno: 0
+                    Last_Error:
+                  Skip_Counter: 0
+           Exec_Master_Log_Pos: 344
+               Relay_Log_Space: 1249
+               Until_Condition: None
+                Until_Log_File:
+                 Until_Log_Pos: 0
+            Master_SSL_Allowed: No
+            Master_SSL_CA_File:
+            Master_SSL_CA_Path:
+               Master_SSL_Cert:
+             Master_SSL_Cipher:
+                Master_SSL_Key
+		 Seconds_Behind_Master: 0
+ Master_SSL_Verify_Server_Cert: No
+                 Last_IO_Errno: 0
+                 Last_IO_Error:
+                Last_SQL_Errno: 0
+                Last_SQL_Error:
+   Replicate_Ignore_Server_Ids:
+              Master_Server_Id: 1
+                Master_SSL_Crl:
+            Master_SSL_Crlpath:
+                    Using_Gtid: No
+                   Gtid_IO_Pos:
+       Replicate_Do_Domain_Ids:
+   Replicate_Ignore_Domain_Ids:
+                 Parallel_Mode: optimistic
+                     SQL_Delay: 0
+           SQL_Remaining_Delay: NULL
+       Slave_SQL_Running_State: Slave has read all relay log; waiting for more updates
+              Slave_DDL_Groups: 0
+Slave_Non_Transactional_Groups: 0
+    Slave_Transactional_Groups: 0
+1 row in set (0,000 sec)
+
+
+c.	Configuration du pare-feu UFW
+Il est recommandé d'utiliser le pare-feu entre tous les serveurs MariaDB. Cela garantira que sauf les réseaux autorisés pourront accéder et atteindre les ports de service MariaDB. Et dans ce tp, j’ai utilisé le pare-feu UFW.
+apt install ufw== > pour installer
+Seuls les réseaux "192.168.100.0/24" seront autorisés à accéder aux ports TCP du serveur MariaDB
+ufw allow from 192.168.100.0/24 to 192.168.100.251 port 3306 ,4567,4568,443,80 proto tcp ====>MASTER
+ufw allow from 192.168.100.0/24 to 192.168.100.252 port 3306 ,4567,4568,4444,443,80 proto tcp ====>SLAVE
+Fonctions des ports :
+3306==Connexion mysql
+4567==trafic de replication de cluster
+4568== transfert d’etat incrémentiel
+4444==copie complete des données du donneur
+
+ufw enable === > pour l’activer
+ufw status===> pour voir les réseaux autorisés sur le pare-feu
+d.	Test de la réplication de la base de données
+Sur le master ; 
+mysql -u root –p
+Créez une nouvelle base de données "phpmyadmin" 
+CREATE DATABASE phpmyadmin ;
+USE phpmyadmin ;
+Créez maintenant des tables dans la base de données « phpmyadmin »
+CREATE TABLE users (id INT AUTO_INCREMENT,
+firstname VARCHAR(30),
+lastname VARCHAR(30),
+date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+PRIMARY KEY(id));
+
+INSERT INTO users(firstname,lastname) VALUES ('Alice','Wonders') ;   ====> Pour créer utilisateur Alice Wonders dans la table users
+INSERT INTO users(firstname,lastname) VALUES ('Bob','Burgers');
+SHOW DATABASES;
++--------------------+
+| Database           |
++--------------------+
+| information_schema |
+| mysql              |
+| performance_schema |
+| phpmyadmin         |
+| test1              |
+| testdb
+
+USE phpmyadmin;
+
+select @@hostname;
++------------+
+| @@hostname |
++------------+
+| web1       |
++------------+
+SELECT * FROM users;
++----+-----------+----------+---------------------+
+| id | firstname | lastname | date                |
++----+-----------+----------+---------------------+
+|  1 | Alice     | Wonders  | 2023-07-03 12:49:35 |
+|  2 | Bob       | Burgers  | 2023-07-03 12:51:25 |
++----+-----------+----------+---------------------+
+2 rows in set (0,000 sec)
+
+
+

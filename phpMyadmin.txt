@@ -1,0 +1,186 @@
+I. Présentation
+
+Dans ce tutoriel, nous allons apprendre à installer PhpMyAdmin sur un serveur Debian 11 (Linux) avec Apache. Cette procédure étape par étape part du principe que vous disposez déjà d'un socle LAMP opérationnel, c'est-à-dire qu'Apache, MySQL/MariaDB et PHP sont déjà en place sur la machine.
+
+Pour rappel, PhpMyAdmin est une application est un logiciel gratuit qui permet de gérer un système de gestion de bases de données comme MySQL ou MariaDB à partir d'une interface web. Il permet aux administrateurs de manipuler les bases de données, les tables, les utilisateurs, les droits, etc... Sans forcément connaître les requêtes SQL correspondantes. À partir de l'interface Web, il est possible d'exécuter des requêtes SQL directement.
+
+
+II. Installation de PhpMyAdmin
+L'installation de PhpMyAdmin ne s'effectue pas comme un paquet classique, mais plutôt sur le même principe qu'une application web. Il faut que l'on télécharge les sources à partir du site officiel, directement dans le dossier "/tmp" (ou ailleurs) :
+cd /tmp
+wget https://files.phpmyadmin.net/phpMyAdmin/5.1.3/phpMyAdmin-5.1.3-all-languages.zip7
+
+Avant de faire la commande "wget" je vous invite à accéder à la page de téléchargement de PhpMyAdmin afin de récupérer le lien vers la dernière version. Ici, c'est bien la dernière version stable : 5.1.3.
+
+Ensuite, nous devons extraire le contenu de cette archive ZIP avec la commande "unzip". Elle n'est pas installée par défaut sur Debian 11. Vous pouvez l'installer avec cette commande :
+
+sudo apt-get update
+sudo apt-get install unzip
+Ensuite, on décompresse l'archive ZIP dans le répertoire courant :
+unzip phpMyAdmin-5.1.3-all-languages.zip
+On va déplacer le dossier complet vers "/usr/share" dans un nouveau dossier nommé "phpmyadmin". Ce qui donne :
+
+sudo mv phpMyAdmin-5.1.3-all-languages /usr/share/phpmyadmin
+
+Ensuite, on crée un dossier distinct pour les fichiers temporaires :
+sudo mkdir -p /var/lib/phpmyadmin/tmp
+
+Puis, on attribue les droits sur le dossier racine "phpmyadmin" à l'utilisateur associé à Apache (www-data) afin qu'il soit propriétaire. Nous préciserons le chemin vers le dossier "tmp" dans la configuration de PhpMyAdmin.
+sudo chown -R www-data:www-data /var/lib/phpmyadmin/
+PhpMyAdmin est fourni avec un template pour le fichier de configuration, alors on va créer une copie de ce template pour ne pas partir de zéro :
+cp /usr/share/phpmyadmin/config.sample.inc.php /usr/share/phpmyadmin/config.inc.php
+
+Afin d'utiliser le mode d'authentification basé sur les cookies, nous devons générer une chaîne aléatoire qui est une sorte de passphrase au sein du fichier de configuration. Il doit s'agir d'une chaîne de 32 caractères. Un cookie permanent stockera l'identifiant sur votre machine tandis que le mot de passe est géré par un cookie temporaire.
+
+On peut générer cette chaîne aléatoire avec la commande suivante :
+
+openssl rand -base64 32
+Copiez la valeur retournée en sortie. Nous allons l'insérer dans le fichier de configuration de PhpMyAdmin. Ouvrez le fichier avec nano (ou un autre éditeur de texte) :
+
+nano /usr/share/phpmyadmin/config.inc.php
+
+Collez la valeur au niveau de l'option "blowfish_secret", comme ceci :
+
+$cfg['blowfish_secret'] = 'deJ8reLGV1cXPyd32454/um/EGWRef/14Jo7tg112WM=';
+
+Ensuite, il faut définir un user et un mot de passe que PhpMyAdmin va utiliser pour se connecter à sa base de données et stocker ses données. Pour cela, il y a deux options à décommenter et modifier pour éviter d'avoir les valeurs par défaut :
+
+$cfg['Servers'][$i]['controluser'] = 'pma2022';
+$cfg['Servers'][$i]['controlpass'] = 'MotDePasseComplexe';
+
+Décommentez les autres options, comme sur 
+
+
+/* Storage database and tables */
+ $cfg['Servers'][$i]['pmadb'] = 'phpmyadmin';
+ $cfg['Servers'][$i]['bookmarktable'] = 'pma__bookmark';
+ $cfg['Servers'][$i]['relation'] = 'pma__relation';
+ $cfg['Servers'][$i]['table_info'] = 'pma__table_info';
+ $cfg['Servers'][$i]['table_coords'] = 'pma__table_coords';
+ $cfg['Servers'][$i]['pdf_pages'] = 'pma__pdf_pages';
+ $cfg['Servers'][$i]['column_info'] = 'pma__column_info';
+ $cfg['Servers'][$i]['history'] = 'pma__history';
+ $cfg['Servers'][$i]['table_uiprefs'] = 'pma__table_uiprefs';
+ $cfg['Servers'][$i]['tracking'] = 'pma__tracking';
+ $cfg['Servers'][$i]['userconfig'] = 'pma__userconfig';
+ $cfg['Servers'][$i]['recent'] = 'pma__recent';
+ $cfg['Servers'][$i]['favorite'] = 'pma__favorite';
+ $cfg['Servers'][$i]['users'] = 'pma__users';
+ $cfg['Servers'][$i]['usergroups'] = 'pma__usergroups';
+ $cfg['Servers'][$i]['navigationhiding'] = 'pma__navigationhiding';
+ $cfg['Servers'][$i]['savedsearches'] = 'pma__savedsearches';
+ $cfg['Servers'][$i]['central_columns'] = 'pma__central_columns';
+ $cfg['Servers'][$i]['designer_settings'] = 'pma__designer_settings'; $cfg['Servers'][$i]['export_templates'] = 'pma__export_templates';
+
+Enfin, ajoutez cette directive pour déclarer le répertoire temporaire (créé précédemment) :
+
+$cfg['UploadDir'] = '';
+$cfg['SaveDir'] = '';
+$cfg['TempDir'] = '/var/lib/phpmyadmin/tmp';
+
+Sauvegardez et fermez le fichier.
+
+Avant de créer notre propre compte "admin" distinct pour administrer PhpMyAdmin, on va créer la base de données de l'outil. Pour cela, on va utiliser le script fournit :
+
+mysql -u root -p < /usr/share/phpmyadmin/sql/create_tables.sql
+Ensuite, on va se connecter à l'instance MySQL/MariaDB pour donner les droits sur cette base de données à l'utilisateur "pma2022" :
+
+mysql -u root -p
+
+Une fois connecté avec le prompt "mysql>" à l'écran, exécutez les requêtes SQL suivantes :
+
+CREATE USER 'pma2022'@'localhost' IDENTIFIED BY 'MotdePasseComplexe';
+GRANT ALL PRIVILEGES ON phpmyadmin.* TO 'pma2022'@'localhost' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+
+Les informations (utilisateur et mot de passe) doivent correspondre aux valeurs définies dans le fichier de configuration.
+III. Création d'un admin pour PhpMyAdmin
+
+Nous allons profiter d'être connecté à la console MySQL pour créer un nouveau compte administrateur qui aura la main sur l'ensemble des bases de données. Nous utiliserons ce compte pour se connecter à PhpMyAdmin.
+
+Voici les requêtes SQL à exécuter pour créer un utilisateur nommé "pma-admin" avec le mot de passe "MotdePasseComplexe2".
+
+CREATE USER 'pma-admin'@'localhost' IDENTIFIED BY 'MotdePasseComplexe2';
+GRANT ALL PRIVILEGES ON *.* TO 'pma-admin'@'localhost' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+EXIT;
+Contrairement à l'utilisateur précédent, celui-ci a les droits sur toutes les BDD de l'instant MySQL, d'où le "*.*" dans la requête GRANT.
+IV. Intégration de PhpMyAdmin à Apache
+PhpMyAdmin est installé et configuré mais il nous manque une étape cruciale : la publication de l'application via Apache afin de pouvoir y accéder avec un navigateur.
+
+Nous allons créer un fichier de configuration propre à PhpMyAdmin :
+
+sudo nano /etc/apache2/conf-available/phpmyadmin.conf
+
+Voici le contenu à intégrer au fichier de configuration (peut-être adapté) :
+
+Alias /pma /usr/share/phpmyadmin
+
+<Directory /usr/share/phpmyadmin>
+  Options SymLinksIfOwnerMatch
+  DirectoryIndex index.php
+
+  # Autoriser accès depuis certaines adresses IP / sous-réseau
+  Order deny,allow
+  Deny from all
+  Allow from 192.168.1.0/24
+
+  <IfModule mod_php.c>
+    <IfModule mod_mime.c>
+      AddType application/x-httpd-php .php
+    </IfModule>
+    <FilesMatch ".+\.php$">
+      SetHandler application/x-httpd-php
+    </FilesMatch>
+
+    php_value include_path .
+    php_admin_value upload_tmp_dir /var/lib/phpmyadmin/tmp
+    
+    php_admin_value open_basedir /usr/share/phpmyadmin/:/etc/phpmyadmin/:/var/lib/phpmyadmin/:/usr/share/php/php-gettext/:/usr/share/php/php-php-gettext/:/usr/share/javascript/:/usr/share/php/tcpdf/:/usr/share/doc/phpmyadmin/:/usr/share/php/phpseclib/
+    
+    php_admin_value mbstring.func_overload 0
+  </IfModule>
+
+</Directory>
+
+# Désactiver accès web sur certains dossiers
+<Directory /usr/share/phpmyadmin/templates>
+  Require all denied
+</Directory>
+<Directory /usr/share/phpmyadmin/libraries>
+  Require all denied
+</Directory>
+<Directory /usr/share/phpmyadmin/setup/lib>
+  Require all denied
+</Directory>
+
+Enregistrez le fichier et activez ce fichier de config (qui s'appuie sur le VirtualHost par défaut, mais on pourrait créer un vhost distinct) :
+
+sudo a2enconf phpmyadmin.conf
+
+Validez la configuration, et si c'est OK rechargez Apache :
+
+sudo apachectl configtest
+sudo systemctl reload apache2
+
+
+Tester l'accès à PhpMyAdmin !
+
+V. Accéder à PhpMyAdmin
+
+Ouvrez un navigateur et accédez à l'adresse suivante :
+
+http://<ip-de-votre-serveur>/pma
+
+Je vous rappelle que la valeur "pma" dépend de l'option "alias" définie précédemment. Vous arrivez sur une page de connexion, vous devez vous connecter avec le compte "pma-admin" que l'on a déjà créé.
+Pour finir, je vous invite à supprimer le dossier "setup" car il n'a pas d'intérêt. Au cas où on laissera la directive dans la config d'Apache pour refuser l'accès à ce dossier.
+
+rm /usr/share/phpmyadmin/setup/ -Rf
+
+
+
+
+
+
+
+

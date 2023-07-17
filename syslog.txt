@@ -1,0 +1,53 @@
+
+Installation et Configuration de syslog-ng sur ubuntu
+ 
+apt install syslog-ng -y
+ensuite dans le fichier 
+#nano /etc/haproxy/haproxy.cfg; on ajouter les lignes suivantes:
+
+global
+        log 127.0.0.1:514 local0 info
+defaults
+        log     global
+	option  httplog
+
+
+frontend web-frontend
+        bind *:80
+        #bind *:443 ssl crt /etc/ssl/mescertifs/mescertifs.pem
+        #redirect scheme https if !{ ssl_fc }
+        mode http
+        default_backend web-backend
+backend web-backend
+        mode http
+        balance roundrobin
+        server web1.ccs.labo 192.168.100.251:80 check
+        server web2.jury.labo 192.168.100.252:80 check
+
+Quitter et démarrer le service haproxy
+systemctl retart haproxy
+
+ensuite on va modifier le fichier de configuration syslog
+#nano /etc/syslog-ng/syslog-ng.conf
+On ajouter les lignes suivantes;
+
+
+source s_udp {
+        udp(ip(127.0.0.1) port(514));
+};
+
+destination d_haproxy { file("/var/log/haproxy"); };
+filter f_local0 { facility(local0); };
+log { source(s_udp); filter(f_local0); destination(d_haproxy); };
+
+
+quitter et redémarrer le sysvice syslog 
+systemctl enable syslog-ng
+systemctl restart syslog-ng
+
+
+ls /var/log ==> pour voir les fichier de logs créé (haproxy.log)
+
+cat /var/log/haproxy.log ===> pour voir les mesages de logs
+
+
